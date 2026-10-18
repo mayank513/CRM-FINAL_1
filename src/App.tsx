@@ -6,12 +6,12 @@ import { LeadDetailView } from './features/leads/LeadDetailView';
 import { CreateLeadModal } from './features/leads/CreateLeadModal';
 import { LostReasonModal } from './features/leads/LostReasonModal';
 import { ReportsView } from './features/dashboard/ReportsView';
-import { AuthModal } from './features/auth/AuthModal';
+import { LoginPage } from './features/auth/LoginPage';
 import { leadService } from './services/leadService';
 import { followUpService } from './services/followUpService';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import type { Lead, FollowUp, LeadStatus } from './types/database';
-import { AlertCircle, CalendarClock, CheckCircle2, ChevronRight } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'leads' | 'followups' | 'reports'>('dashboard');
@@ -19,9 +19,9 @@ export function App() {
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingLostLead, setPendingLostLead] = useState<{ id: string; name: string } | null>(null);
   const [currentUser, setCurrentUser] = useState<{ email?: string; id?: string } | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -30,6 +30,7 @@ export function App() {
         if (session?.user) {
           setCurrentUser({ email: session.user.email, id: session.user.id });
         }
+        setIsAuthLoading(false);
       });
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -38,9 +39,12 @@ export function App() {
         } else {
           setCurrentUser(null);
         }
+        setIsAuthLoading(false);
       });
 
       return () => subscription.unsubscribe();
+    } else {
+      setIsAuthLoading(false);
     }
   }, []);
 
@@ -143,6 +147,29 @@ export function App() {
     showToast('Signed out successfully.');
   };
 
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          <p className="text-sm font-medium text-slate-400">Loading BrightPath CRM...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not logged in and Supabase is configured, show the professional dedicated login page
+  if (isSupabaseConfigured && !currentUser) {
+    return (
+      <LoginPage
+        onLoginSuccess={() => {
+          showToast('Welcome back! Signed in successfully.');
+          loadData();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       {/* Toast Notification */}
@@ -167,30 +194,11 @@ export function App() {
           setCurrentTab(tab);
         }}
         userEmail={currentUser?.email}
-        onSignOut={currentUser ? handleSignOut : () => setIsAuthModalOpen(true)}
+        onSignOut={handleSignOut}
       />
 
       {/* Primary Workspace Content Area */}
       <main className="flex-1 p-8 max-w-7xl mx-auto overflow-y-auto">
-        {!isSupabaseConfigured && (
-          <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-blue-600 shrink-0" />
-              <div className="text-sm">
-                <span className="font-semibold">Ready to connect your Supabase database:</span> Add{' '}
-                <code className="text-xs bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">VITE_SUPABASE_URL</code> and{' '}
-                <code className="text-xs bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">VITE_SUPABASE_ANON_KEY</code> to{' '}
-                <code className="text-xs bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">.env</code>.
-              </div>
-            </div>
-            <button
-              onClick={() => setIsAuthModalOpen(true)}
-              className="text-xs font-semibold px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shrink-0"
-            >
-              Sign In / Auth
-            </button>
-          </div>
-        )}
 
         {/* Tab Switcher */}
         {selectedLead ? (
@@ -275,15 +283,6 @@ export function App() {
             await executeStatusUpdate(pendingLostLead.id, 'Lost', reason);
             setPendingLostLead(null);
           }
-        }}
-      />
-
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onAuthSuccess={() => {
-          showToast('Authenticated successfully.');
-          loadData();
         }}
       />
     </div>
