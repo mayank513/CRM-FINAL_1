@@ -54,10 +54,11 @@ export const CreateLeadModal: React.FC<CreateLeadModalProps> = ({
       });
       onClose();
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
+      console.error('Lead submission error:', err);
+      if (err && typeof err === 'object' && 'message' in err) {
+        setError(String((err as { message: string }).message));
       } else {
-        setError('Failed to record student inquiry.');
+        setError(JSON.stringify(err) || 'Failed to record student inquiry.');
       }
     } finally {
       setIsSubmitting(false);
