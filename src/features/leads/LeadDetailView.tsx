@@ -8,22 +8,26 @@ import {
   CheckCircle2, 
   Plus, 
   FileText, 
-  Activity as ActivityIcon 
+  Activity as ActivityIcon,
+  Edit3
 } from 'lucide-react';
 import type { Lead, FollowUp, Activity, LeadStatus } from '../../types/database';
 import { leadService } from '../../services/leadService';
 import { followUpService } from '../../services/followUpService';
+import { EditLeadModal } from './EditLeadModal';
 
 interface LeadDetailViewProps {
   lead: Lead;
   onBack: () => void;
   onUpdateStatus: (id: string, newStatus: LeadStatus) => void;
+  onUpdateLead: (id: string, updates: Partial<Lead>) => Promise<void>;
 }
 
 export const LeadDetailView: React.FC<LeadDetailViewProps> = ({
   lead,
   onBack,
   onUpdateStatus,
+  onUpdateLead,
 }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
@@ -31,6 +35,7 @@ export const LeadDetailView: React.FC<LeadDetailViewProps> = ({
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpNote, setFollowUpNote] = useState('');
   const [isAddingFollowUp, setIsAddingFollowUp] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -97,7 +102,7 @@ export const LeadDetailView: React.FC<LeadDetailViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Back button and lead summary title */}
+      {/* Back button and status controls */}
       <div className="flex items-center justify-between">
         <button
           onClick={onBack}
@@ -108,6 +113,14 @@ export const LeadDetailView: React.FC<LeadDetailViewProps> = ({
         </button>
 
         <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setIsEditModalOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs"
+          >
+            <Edit3 className="h-3.5 w-3.5 text-slate-500" />
+            Edit Details
+          </button>
+
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Status:</span>
           <select
             value={lead.status}
@@ -303,6 +316,16 @@ export const LeadDetailView: React.FC<LeadDetailViewProps> = ({
           </div>
         </div>
       </div>
+
+      <EditLeadModal
+        isOpen={isEditModalOpen}
+        lead={lead}
+        onClose={() => setIsEditModalOpen(false)}
+        onSubmit={async (id, updates) => {
+          await onUpdateLead(id, updates);
+          await loadLeadDetails();
+        }}
+      />
     </div>
   );
 };

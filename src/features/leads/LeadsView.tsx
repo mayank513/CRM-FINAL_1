@@ -7,7 +7,8 @@ import {
   Mail, 
   BookOpen, 
   ChevronRight, 
-  RotateCcw 
+  RotateCcw,
+  ArrowUpDown
 } from 'lucide-react';
 import type { Lead, LeadStatus, LeadSource } from '../../types/database';
 
@@ -27,8 +28,10 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
 
-  const filteredLeads = leads.filter((lead) => {
+  // Filter
+  const filtered = leads.filter((lead) => {
     const matchesSearch = 
       lead.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       lead.phone.includes(searchTerm) ||
@@ -41,10 +44,25 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
     return matchesSearch && matchesStatus && matchesSource;
   });
 
+  // Sort
+  const sortedLeads = [...filtered].sort((a, b) => {
+    if (sortBy === 'newest') {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    if (sortBy === 'oldest') {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    if (sortBy === 'name') {
+      return a.full_name.localeCompare(b.full_name);
+    }
+    return 0;
+  });
+
   const resetFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
     setSourceFilter('all');
+    setSortBy('newest');
   };
 
   const statusColors: Record<LeadStatus, string> = {
@@ -62,7 +80,7 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Student Enquiries</h2>
           <p className="text-sm text-slate-500 mt-1">
-            Browse, manage, and convert incoming prospective students
+            Browse, sort, filter, and convert prospective students
           </p>
         </div>
         <button
@@ -87,7 +105,7 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {/* Status Filter */}
           <select
             value={statusFilter}
@@ -116,7 +134,21 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
             <option value="Social Media">Social Media</option>
           </select>
 
-          {(searchTerm || statusFilter !== 'all' || sourceFilter !== 'all') && (
+          {/* Sort Dropdown */}
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm">
+            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'name')}
+              className="bg-transparent focus:outline-none text-slate-700 text-sm cursor-pointer"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="name">Name (A-Z)</option>
+            </select>
+          </div>
+
+          {(searchTerm || statusFilter !== 'all' || sourceFilter !== 'all' || sortBy !== 'newest') && (
             <button
               onClick={resetFilters}
               title="Reset Filters"
@@ -130,11 +162,11 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
 
       {/* Leads Table */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
-        {filteredLeads.length === 0 ? (
+        {sortedLeads.length === 0 ? (
           <div className="p-12 text-center">
             <Filter className="h-8 w-8 text-slate-300 mx-auto mb-3" />
             <p className="text-base font-semibold text-slate-700">No matching student leads found</p>
-            <p className="text-xs text-slate-400 mt-1">Try refining search criteria or clear your filters.</p>
+            <p className="text-xs text-slate-400 mt-1">Try refining search criteria or reset your filters.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -145,12 +177,12 @@ export const LeadsView: React.FC<LeadsViewProps> = ({
                   <th className="py-3 px-4">Course Interest</th>
                   <th className="py-3 px-4">Source</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Created</th>
+                  <th className="py-3 px-4">Created Date</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredLeads.map((lead) => (
+                {sortedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     className="hover:bg-slate-50/60 transition-colors group cursor-pointer"

@@ -4,12 +4,14 @@ import { DashboardView } from './features/dashboard/DashboardView';
 import { LeadsView } from './features/leads/LeadsView';
 import { LeadDetailView } from './features/leads/LeadDetailView';
 import { CreateLeadModal } from './features/leads/CreateLeadModal';
+import { LostReasonModal } from './features/leads/LostReasonModal';
+import { ReportsView } from './features/dashboard/ReportsView';
 import { AuthModal } from './features/auth/AuthModal';
 import { leadService } from './services/leadService';
 import { followUpService } from './services/followUpService';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import type { Lead, FollowUp, LeadStatus } from './types/database';
-import { AlertCircle, CalendarClock, BarChart3, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CalendarClock, CheckCircle2, ChevronRight } from 'lucide-react';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'leads' | 'followups' | 'reports'>('dashboard');
@@ -18,11 +20,11 @@ export function App() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [pendingLostLead, setPendingLostLead] = useState<{ id: string; name: string } | null>(null);
   const [currentUser, setCurrentUser] = useState<{ email?: string; id?: string } | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
-    // Check initial auth session
     if (isSupabaseConfigured) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
@@ -74,12 +76,30 @@ export function App() {
     loadData();
   };
 
-  const handleUpdateStatus = async (id: string, newStatus: LeadStatus) => {
+  const handleUpdateLeadDetails = async (id: string, updates: Partial<Lead>) => {
+    const updated = await leadService.updateLead(id, updates);
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updated } : l)));
+    if (selectedLead && selectedLead.id === id) {
+      setSelectedLead({ ...selectedLead, ...updated });
+    }
+    showToast(`Lead details updated for ${updated.full_name}.`);
+    loadData();
+  };
+
+  const handleStatusChangeRequest = (id: string, newStatus: LeadStatus) => {
+    if (newStatus === 'Lost') {
+      const target = leads.find((l) => l.id === id);
+      setPendingLostLead({ id, name: target ? target.full_name : 'Student' });
+    } else {
+      executeStatusUpdate(id, newStatus);
+    }
+  };
+
+  const executeStatusUpdate = async (id: string, newStatus: LeadStatus, lostReason?: string) => {
     const leadToUpdate = leads.find((l) => l.id === id);
     if (!leadToUpdate) return;
     const oldStatus = leadToUpdate.status;
 
-    // Optimistic UI update
     setLeads((prev) =>
       prev.map((l) => (l.id === id ? { ...l, status: newStatus } : l))
     );
@@ -88,14 +108,30 @@ export function App() {
     }
 
     try {
-      await leadService.updateLead(id, { status: newStatus }, oldStatus);
+      const updates: Partial<Lead> = { status: newStatus };
+      if (lostReason) {
+        updates.notes = leadToUpdate.notes 
+          ? `${leadToUpdate.notes}\n[Lost Reason]: ${lostReason}` 
+          : `[Lost Reason]: ${lostReason}`;
+      }
+      await leadService.updateLead(id, updates, oldStatus);
+      if (lostReason) {
+        await leadService.logActivity(id, 'status_change', `Marked Lost: ${lostReason}`);
+      }
       showToast(`Status updated to ${newStatus}`);
+      loadData();
     } catch (err: unknown) {
-      // Revert if error
       setLeads((prev) =>
         prev.map((l) => (l.id === id ? { ...l, status: oldStatus } : l))
       );
       showToast(err instanceof Error ? err.message : 'Failed to update status', 'error');
+    }
+  };
+
+  const handleNavigateToLeadFromFollowUp = (leadId: string) => {
+    const target = leads.find((l) => l.id === leadId);
+    if (target) {
+      setSelectedLead(target);
     }
   };
 
@@ -136,7 +172,6 @@ export function App() {
 
       {/* Primary Workspace Content Area */}
       <main className="flex-1 p-8 max-w-7xl mx-auto overflow-y-auto">
-        {/* Top bar with environment alert if not configured */}
         {!isSupabaseConfigured && (
           <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -162,7 +197,8 @@ export function App() {
           <LeadDetailView
             lead={selectedLead}
             onBack={() => setSelectedLead(null)}
-            onUpdateStatus={handleUpdateStatus}
+            onUpdateStatus={handleStatusChangeRequest}
+            onUpdateLead={handleUpdateLeadDetails}
           />
         ) : currentTab === 'dashboard' ? (
           <DashboardView
@@ -176,7 +212,7 @@ export function App() {
             leads={leads}
             onSelectLead={(lead) => setSelectedLead(lead)}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
-            onUpdateStatus={handleUpdateStatus}
+            onUpdateStatus={handleStatusChangeRequest}
           />
         ) : currentTab === 'followups' ? (
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
@@ -184,11 +220,21 @@ export function App() {
               <CalendarClock className="h-5 w-5 text-blue-600" />
               All Scheduled Follow-ups
             </h2>
+            <p className="text-xs text-slate-500">Click any follow-up task to jump straight to that student record</p>
             <div className="divide-y divide-slate-100">
               {followUps.map((fu) => (
-                <div key={fu.id} className="py-4 flex items-center justify-between">
+                <div
+                  key={fu.id}
+                  onClick={() => handleNavigateToLeadFromFollowUp(fu.lead_id)}
+                  className="py-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/70 px-2 rounded-lg transition-colors group"
+                >
                   <div>
-                    <p className="font-semibold text-slate-900">{fu.lead?.full_name || 'Inquiry'}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-slate-900 group-hover:text-blue-600">
+                        {fu.lead?.full_name || 'Student Enquiry'}
+                      </p>
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-600" />
+                    </div>
                     <p className="text-xs text-slate-500 mt-0.5">{fu.note}</p>
                     <span className="text-xs text-blue-600 mt-1 inline-block">
                       Due: {new Date(fu.due_at).toLocaleDateString()} at{' '}
@@ -209,13 +255,7 @@ export function App() {
             </div>
           </div>
         ) : (
-          <div className="bg-white p-8 rounded-2xl border border-slate-200/80 shadow-xs text-center">
-            <BarChart3 className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-            <h3 className="font-bold text-slate-800">Admissions Conversion Reports</h3>
-            <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
-              Live conversion metrics are aggregated on your main dashboard according to the master specification.
-            </p>
-          </div>
+          <ReportsView leads={leads} followUps={followUps} />
         )}
       </main>
 
@@ -224,6 +264,18 @@ export function App() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onSubmit={handleCreateLead}
+      />
+
+      <LostReasonModal
+        isOpen={Boolean(pendingLostLead)}
+        leadName={pendingLostLead?.name || 'Student'}
+        onClose={() => setPendingLostLead(null)}
+        onConfirm={async (reason) => {
+          if (pendingLostLead) {
+            await executeStatusUpdate(pendingLostLead.id, 'Lost', reason);
+            setPendingLostLead(null);
+          }
+        }}
       />
 
       <AuthModal
